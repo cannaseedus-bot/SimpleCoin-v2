@@ -345,6 +345,7 @@ img {width: 100%; object-fit: cover; height: auto;}
 <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+    <script src="coinbase.js"></script>
     <script src="coinbasecart.js"></script>
     <script src="modal.js"></script>
 
