@@ -2,14 +2,23 @@
 // File: create coinbase charge 
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Retrieve total amount from the request
-    $total = $_POST['total'];
+    $total = $_POST['total'] ?? 0;
+    $email = filter_input(INPUT_POST, 'email', FILTER_VALIDATE_EMAIL) ?: '';
+    $orderId = trim((string)($_POST['order_id'] ?? ''));
 
-    // Coinbase Commerce API URL and your API Key
+    if ($orderId === '') {
+        $orderId = 'order-' . bin2hex(random_bytes(6));
+    }
+
     $url = 'https://api.commerce.coinbase.com/charges';
-    $apiKey = 'xxxx';
+    $apiKey = getenv('COINBASE_API_KEY');
 
-    // Charge data
+    if (!$apiKey) {
+        http_response_code(500);
+        echo json_encode(['error' => 'Coinbase API key is not configured']);
+        exit;
+    }
+
     $postData = [
         'name' => 'Cart Total Charge',
         'description' => 'Charge for items in cart',
@@ -18,14 +27,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'amount' => $total,
             'currency' => 'USD'
         ],
-    'redirect_url' => 'https://bitcoin.cannabis-seed.us/payment-success.html',
-    'cancel_url' => 'https://bitcoin.cannabis-seed.us/payment-cancel.html'
+        'redirect_url' => 'https://bitcoin.cannabis-seed.us/payment-success.html',
+        'cancel_url' => 'https://bitcoin.cannabis-seed.us/payment-cancel.html',
+        'metadata' => [
+            'order_id' => $orderId,
+            'email' => $email,
+        ],
     ];
 
-    // Initiate cURL session
     $ch = curl_init($url);
 
-    // Set cURL options
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
         'Content-Type: application/json',
@@ -35,19 +46,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData));
 
-    // Execute cURL request and capture the response
     $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
-    // Decode the JSON response
     $responseData = json_decode($response, true);
 
-    if (isset($responseData['data']['hosted_url'])) {
-        // Send checkout URL back to client
-        echo json_encode(['checkoutUrl' => $responseData['data']['hosted_url']]);
+    $checkoutUrl = $responseData['data']['hosted_url'] ?? null;
+    $chargeId = $responseData['data']['id'] ?? null;
+
+    if ($httpCode >= 200 && $httpCode < 300 && $checkoutUrl) {
+        echo json_encode([
+            'checkoutUrl' => $checkoutUrl,
+            'hosted_url' => $checkoutUrl,
+            'charge_id' => $chargeId,
+            'order_id' => $orderId,
+        ]);
     } else {
-        // Handle errors (simplified)
-        echo json_encode(['error' => 'Failed to create charge']);
+        echo json_encode(['error' => 'Failed to create charge', 'details' => $responseData]);
     }
 }
 ?>

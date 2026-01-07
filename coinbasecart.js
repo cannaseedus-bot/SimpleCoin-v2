@@ -169,21 +169,46 @@ function emptyCart() {
     showCartTable(); // Call to update the UI after emptying the cart
 }
 
+function generateASXWallet(passwordInput) {
+    var password = passwordInput && passwordInput.trim() !== '' ? passwordInput : 'asx-user';
+
+    return $.ajax({
+        type: 'POST',
+        url: 'create_asx_wallet.php',
+        data: { password: password }
+    }).then(function(response) {
+        var data = typeof response === 'string' ? JSON.parse(response) : response;
+        if (data && data.wallet_address) {
+            sessionStorage.setItem('asx-wallet-address', data.wallet_address);
+            return data.wallet_address;
+        }
+        throw new Error('Wallet address missing in response.');
+    }).catch(function(error) {
+        console.error('Wallet creation failed', error);
+        return null;
+    });
+}
+
 
 function createCoinbaseCharge() {
     // Retrieve the total from calculateCartTotal function, which computes the total based on the cart in sessionStorage
     var cartTotal = calculateCartTotal();
+    var orderId = typeof generateOrderId === 'function' ? generateOrderId() : ('order-' + Date.now());
+    var email = typeof getCheckoutEmail === 'function' ? getCheckoutEmail() : '';
 
     // Now use this cartTotal in your AJAX request
     $.ajax({
         type: "POST",
         url: "coinbasepay.php",
-        data: { total: cartTotal }, // Pass the total as part of the request
+        data: { total: cartTotal, order_id: orderId, email: email }, // Pass total, order ID, and email
         success: function(response) {
             // Assuming the response from the server includes the URL to the Coinbase payment page
-            var data = JSON.parse(response);
-            if (data && data.hosted_url) {
-                window.location.href = data.hosted_url; // Redirect the user to the Coinbase payment page
+            var data = typeof response === 'string' ? JSON.parse(response) : response;
+            var checkoutUrl = data && (data.hosted_url || data.checkoutUrl);
+            if (checkoutUrl) {
+                generateASXWallet(sessionStorage.getItem('asx-wallet-password')).always(function() {
+                    window.location.href = checkoutUrl; // Redirect the user to the Coinbase payment page
+                });
             } else {
                 alert("There was an issue initiating the payment. Please try again.");
             }
