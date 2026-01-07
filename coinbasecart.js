@@ -1,3 +1,5 @@
+const CART_STORAGE_KEY = 'shopping-cart';
+
 // Load products from the JSON file and display them
 $(document).ready(function() {
     $.getJSON('products.json', function(products) {
@@ -8,9 +10,53 @@ $(document).ready(function() {
         emptyCart();
     });
 
-    // Load cart from session storage on page load
-    showCartTable();
+    loadCartFromCookie().finally(function() {
+        showCartTable();
+    });
 });
+
+function getCartFromStorage() {
+    return JSON.parse(sessionStorage.getItem(CART_STORAGE_KEY) || '[]');
+}
+
+function setCartInStorage(cart, options = {}) {
+    var shouldSync = options.sync !== false;
+    sessionStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
+    if (shouldSync) {
+        syncCartWithCookie(cart);
+    }
+}
+
+function syncCartWithCookie(cart) {
+    var payload = Array.isArray(cart) ? cart : getCartFromStorage();
+    return fetch('sync_cart.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cart: payload })
+    }).catch(function(error) {
+        console.error('Failed to sync cart cookie', error);
+    });
+}
+
+function loadCartFromCookie() {
+    return fetch('load_cart.php')
+        .then(function(response) {
+            if (!response.ok) {
+                throw new Error('Unable to load cart cookie');
+            }
+            return response.json();
+        })
+        .then(function(cart) {
+            if (Array.isArray(cart)) {
+                setCartInStorage(cart, { sync: false });
+            } else {
+                sessionStorage.removeItem(CART_STORAGE_KEY);
+            }
+        })
+        .catch(function(error) {
+            console.error('Failed to load cart from cookie', error);
+        });
+}
 
 function showProductGallery(products) {
     // Initialize an empty string to build the HTML
@@ -50,7 +96,7 @@ function showProductGallery(products) {
 
 function addToCart(button) {
     var product = $(button).data('product'); // Ensure this contains { name, price, ... }
-    var cart = JSON.parse(sessionStorage.getItem('shopping-cart') || '[]');
+    var cart = getCartFromStorage();
 
     var existingProduct = cart.find(p => p.name === product.name);
     if (existingProduct) {
@@ -60,13 +106,13 @@ function addToCart(button) {
         cart.push(product);
     }
 
-    sessionStorage.setItem('shopping-cart', JSON.stringify(cart));
+    setCartInStorage(cart);
     showCartTable();
 }
 
 
 function showCartTable() {
-    var cart = JSON.parse(sessionStorage.getItem('shopping-cart') || '[]'); // Load cart from session storage or initialize as an empty array
+    var cart = getCartFromStorage(); // Load cart from session storage or initialize as an empty array
     var cartHTML = '';
     var totalAmount = 0;
 
@@ -88,7 +134,7 @@ function showCartTable() {
 
 
 function updateCartDisplay() {
-    var cart = JSON.parse(sessionStorage.getItem('cart') || '[]'); // Retrieve the cart from storage
+    var cart = getCartFromStorage(); // Retrieve the cart from storage
     var cartHTML = '';
 
     if (cart.length > 0) {
@@ -119,7 +165,7 @@ function updateCartDisplay() {
 }
 
 function emptyCart() {
-    sessionStorage.removeItem('shopping-cart'); // Ensure this key matches throughout your code
+    setCartInStorage([], { sync: true });
     showCartTable(); // Call to update the UI after emptying the cart
 }
 
@@ -148,3 +194,15 @@ function createCoinbaseCharge() {
     });
 }
 
+function calculateCartTotal() {
+    var cart = getCartFromStorage();
+    var total = 0;
+
+    cart.forEach(function(item) {
+        var price = parseFloat(item.price) || 0;
+        var quantity = parseInt(item.quantity, 10) || 0;
+        total += price * quantity;
+    });
+
+    return total.toFixed(2);
+}
